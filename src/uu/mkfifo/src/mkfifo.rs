@@ -55,10 +55,10 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         let mkfifo_result = create_fifo(f.as_str(), mode);
         umask(prev_umask);
 
-        if mkfifo_result.is_err() {
+        if let Err(error) = mkfifo_result {
             show!(USimpleError::new(
                 1,
-                translate!("mkfifo-error-cannot-create-fifo", "path" => f.quote()),
+                translate!("mkfifo-error-cannot-create-fifo", "path" => f.quote(), "error" => error),
             ));
         } else {
             // Apply SELinux context if requested
@@ -136,19 +136,30 @@ pub fn uu_app() -> Command {
 // libc's path-based `mkfifo` there. Both rely on the caller having cleared
 // the umask so the requested mode is applied atomically (see issue #10020).
 #[cfg(not(target_vendor = "apple"))]
-fn create_fifo(path: &str, mode: u32) -> Result<(), ()> {
+fn create_fifo(path: &str, mode: u32) -> Result<(), String> {
     use rustix::fs::{CWD, mkfifoat};
-    mkfifoat(CWD, path, Mode::from_bits_truncate(mode)).map_err(|_| ())
+    mkfifoat(CWD, path, Mode::from_bits_truncate(mode)).map_err(format_os_error)
 }
 
 #[cfg(target_vendor = "apple")]
-fn create_fifo(path: &str, mode: u32) -> Result<(), ()> {
+fn create_fifo(path: &str, mode: u32) -> Result<(), String> {
     use std::ffi::CString;
-    let c_path = CString::new(path).map_err(|_| ())?;
+    let c_path = CString::new(path).map_err(|e| e.to_string())?;
     // SAFETY: `c_path` is a valid NUL-terminated C string and `mode` is a
     // standard mode_t bit pattern.
     let rc = unsafe { libc::mkfifo(c_path.as_ptr(), mode as libc::mode_t) };
-    if rc == 0 { Ok(()) } else { Err(()) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format_os_error(std::io::Error::last_os_error()))
+    }
+}
+
+fn format_os_error(error: impl ToString) -> String {
+    let message = error.to_string();
+    message
+        .split_once(" (os error")
+        .map_or(message.clone(), |(message, _)| message.to_string())
 }
 
 fn calculate_mode(mode_option: Option<&String>) -> Result<u32, String> {

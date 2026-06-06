@@ -87,6 +87,14 @@ fn test_create_one_fifo_already_exists() {
 }
 
 #[test]
+fn test_create_fifo_missing_parent_directory() {
+    new_ucmd!()
+        .arg("missing/pipe")
+        .fails()
+        .stderr_is("mkfifo: cannot create fifo 'missing/pipe': No such file or directory\n");
+}
+
+#[test]
 fn test_create_fifo_with_mode_and_umask() {
     use uucore::fs::display_permissions;
     let scene = TestScenario::new(util_name!());
@@ -158,7 +166,7 @@ fn test_create_fifo_permission_denied() {
 
     // We no longer attempt to modify file permission if the file was failed to be created.
     // Therefore the error message should only contain "cannot create".
-    let err_msg = format!("mkfifo: cannot create fifo '{named_pipe}': File exists\n");
+    let err_msg = format!("mkfifo: cannot create fifo '{named_pipe}': Permission denied\n");
 
     scene
         .ucmd()
